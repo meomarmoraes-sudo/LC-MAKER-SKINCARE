@@ -1025,679 +1025,26 @@
 </div>
 
 <script>
-    let products = JSON.parse(localStorage.getItem('lcmake_products') || '[]');
-    let kits = JSON.parse(localStorage.getItem('lcmake_kits') || '[]');
-    let feedbacks = JSON.parse(localStorage.getItem('lcmake_feedbacks') || '{}');
-    let currentPage = 'home';
-    let previousPage = 'products';
-    let selectedRating = 0;
-    let modalCallback = null;
-
-    const categories = [
-        { name: 'Limpeza', icon: '🧼' },
-        { name: 'Hidratação', icon: '💧' },
-        { name: 'Tratamento', icon: '✨' },
-        { name: 'Proteção Solar', icon: '☀️' },
-        { name: 'Anti-idade', icon: '⏳' },
-        { name: 'Tonificação', icon: '🌿' },
-        { name: 'Esfoliação', icon: '🌸' },
-        { name: 'Olhos', icon: '👁️' }
-    ];
-
-    function saveData() {
-        localStorage.setItem('lcmake_products', JSON.stringify(products));
-        localStorage.setItem('lcmake_kits', JSON.stringify(kits));
-        localStorage.setItem('lcmake_feedbacks', JSON.stringify(feedbacks));
-    }
-
-    function showPage(page) {
-        if (currentPage !== page) previousPage = currentPage;
-        currentPage = page;
-
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-
-        document.getElementById(`page-${page}`).classList.add('active');
-
-        const navMap = {
-            'home': 0, 'products': 1, 'add-product': 2,
-            'kits': 3, 'add-kit': 4,
-            'product-detail': 1, 'kit-detail': 3
-        };
-        const navBtns = document.querySelectorAll('nav button');
-        if (navMap[page] !== undefined) navBtns[navMap[page]].classList.add('active');
-
-        if (page === 'home') renderHome();
-        if (page === 'products') renderProducts();
-        if (page === 'add-product') setupAddProduct();
-        if (page === 'kits') renderKits();
-        if (page === 'add-kit') setupAddKit();
-    }
-
-    function goBackFromDetail() {
-        showPage(previousPage === 'product-detail' ? 'products' : previousPage);
-    }
-
-    function renderHome() {
-        const allFeedbacks = Object.values(feedbacks).flat();
-        document.getElementById('stat-products').textContent = products.length;
-        document.getElementById('stat-kits').textContent = kits.length;
-        document.getElementById('stat-categories').textContent = [...new Set(products.map(p => p.category))].length;
-        document.getElementById('stat-feedbacks').textContent = allFeedbacks.length;
-
-        const grid = document.getElementById('categories-grid');
-        grid.innerHTML = '';
-        categories.forEach(cat => {
-            const count = products.filter(p => p.category === cat.name).length;
-            const div = document.createElement('div');
-            div.className = 'category-card';
-            div.innerHTML = `
-                <span class="icon">${cat.icon}</span>
-                <div class="name">${cat.name}</div>
-                <div class="count">${count} produto${count !== 1 ? 's' : ''}</div>
-            `;
-            div.onclick = () => {
-                document.getElementById('filter-category').value = cat.name;
-                showPage('products');
-                filterProducts();
-            };
-            grid.appendChild(div);
-        });
-
-        const featured = document.getElementById('featured-products');
-        featured.innerHTML = '';
-        const recent = [...products].reverse().slice(0, 4);
-        if (recent.length === 0) {
-            featured.innerHTML = '<div class="empty-state"><span class="empty-icon">🌸</span><h3>Nenhum produto ainda</h3><p>Comece adicionando seu primeiro produto!</p></div>';
-        } else {
-            recent.forEach(p => featured.appendChild(createProductCard(p)));
-        }
-    }
-
-    function renderProducts() {
-        const select = document.getElementById('filter-category');
-        select.innerHTML = '<option value="">Todas categorias</option>';
-        const usedCats = [...new Set(products.map(p => p.category))];
-        usedCats.forEach(cat => {
-            const opt = document.createElement('option');
-            opt.value = cat;
-            opt.textContent = cat;
-            select.appendChild(opt);
-        });
-
-        filterProducts();
-    }
-
-    function filterProducts() {
-        const search = document.getElementById('search-products').value.toLowerCase();
-        const cat = document.getElementById('filter-category').value;
-        const price = document.getElementById('filter-price').value;
-        const grid = document.getElementById('products-grid');
-
-        let filtered = products.filter(p => {
-            const matchSearch = p.name.toLowerCase().includes(search) || p.description.toLowerCase().includes(search);
-            const matchCat = !cat || p.category === cat;
-            let matchPrice = true;
-            if (price === '0-50') matchPrice = p.price <= 50;
-            else if (price === '50-100') matchPrice = p.price > 50 && p.price <= 100;
-            else if (price === '100-200') matchPrice = p.price > 100 && p.price <= 200;
-            else if (price === '200+') matchPrice = p.price > 200;
-            return matchSearch && matchCat && matchPrice;
-        });
-
-        document.getElementById('products-count-label').textContent =
-            `${filtered.length} produto${filtered.length !== 1 ? 's' : ''} encontrado${filtered.length !== 1 ? 's' : ''}`;
-
-        grid.innerHTML = '';
-        if (filtered.length === 0) {
-            grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><span class="empty-icon">🔍</span><h3>Nenhum produto encontrado</h3><p>Tente ajustar os filtros ou adicione novos produtos.</p></div>';
-        } else {
-            filtered.reverse().forEach(p => grid.appendChild(createProductCard(p)));
-        }
-    }
-
-    function createProductCard(product) {
-        const div = document.createElement('div');
-        div.className = 'product-card';
-        const avgRating = getAvgRating(product.id);
-        const stars = avgRating ? '⭐'.repeat(Math.round(avgRating)) : '☆ Sem avaliações';
-
-        div.innerHTML = `
-            <div class="product-img">
-                ${product.image ? `<img src="${product.image}" alt="${product.name}">` : getCategoryIcon(product.category)}
-            </div>
-            <div class="product-info">
-                <span class="product-category-badge">${product.category}</span>
-                <div class="product-name">${product.name}</div>
-                <div class="product-price">R$ ${Number(product.price).toFixed(2)}</div>
-                <div class="product-rating">${stars}</div>
-                <div class="product-actions">
-                    <button class="btn btn-primary btn-sm" onclick="viewProduct(${product.id})">Ver Detalhes</button>
-                    <button class="btn btn-secondary btn-sm" onclick="editProduct(${product.id})">✏️</button>
-                    <button class="btn btn-danger btn-sm" onclick="confirmDelete('product', ${product.id})">🗑️</button>
-                </div>
-            </div>
-        `;
-        return div;
-    }
-
-    function getCategoryIcon(cat) {
-        const icons = {
-            'Limpeza': '🧼', 'Hidratação': '💧', 'Tratamento': '✨',
-            'Proteção Solar': '☀️', 'Anti-idade': '⏳', 'Tonificação': '🌿',
-            'Esfoliação': '🌸', 'Olhos': '👁️'
-        };
-        return icons[cat] || '🧴';
-    }
-
-    function getAvgRating(productId) {
-        const fb = feedbacks[productId] || [];
-        if (fb.length === 0) return 0;
-        return fb.reduce((sum, f) => sum + f.rating, 0) / fb.length;
-    }
-
-    function setupAddProduct() {
-        if (!document.getElementById('edit-product-id').value) {
-            document.getElementById('form-product-title').innerHTML =
-                'Adicionar Produto <small>Preencha os detalhes do produto</small>';
-        }
-    }
-
-    function previewImage(input) {
-        const file = input.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = e => {
-            document.getElementById('prod-image-preview').src = e.target.result;
-            document.getElementById('prod-image-preview').style.display = 'block';
-            document.getElementById('upload-placeholder').style.display = 'none';
-        };
-        reader.readAsDataURL(file);
-    }
-
-    function saveProduct() {
-        const name = document.getElementById('prod-name').value.trim();
-        const desc = document.getElementById('prod-desc').value.trim();
-        const price = parseFloat(document.getElementById('prod-price').value);
-        const category = document.getElementById('prod-category').value;
-        const editId = document.getElementById('edit-product-id').value;
-
-        if (!name || !desc || isNaN(price) || !category) {
-            showToast('Preencha todos os campos obrigatórios!', 'error');
-            return;
-        }
-
-        if (editId) {
-            const idx = products.findIndex(p => p.id == editId);
-            if (idx !== -1) {
-                products[idx] = {
-                    ...products[idx],
-                    name,
-                    description: desc,
-                    price,
-                    category,
-                    image: document.getElementById('prod-image-preview').style.display !== 'none'
-                        ? document.getElementById('prod-image-preview').src
-                        : products[idx].image
-                };
-                showToast('Produto atualizado com sucesso! ✨', 'success');
-            }
-        } else {
-            const newProduct = {
-                id: Date.now(),
-                name,
-                description: desc,
-                price,
-                category,
-                image: document.getElementById('prod-image-preview').style.display !== 'none'
-                    ? document.getElementById('prod-image-preview').src
-                    : ''
-            };
-            products.push(newProduct);
-            showToast('Produto adicionado com sucesso! 🌸', 'success');
-        }
-
-        saveData();
-        clearProductForm();
-        showPage('products');
-    }
-
-    function clearProductForm() {
-        document.getElementById('edit-product-id').value = '';
-        document.getElementById('prod-name').value = '';
-        document.getElementById('prod-desc').value = '';
-        document.getElementById('prod-price').value = '';
-        document.getElementById('prod-category').value = '';
-        document.getElementById('prod-image-preview').style.display = 'none';
-        document.getElementById('upload-placeholder').style.display = 'block';
-        document.getElementById('form-product-title').innerHTML =
-            'Adicionar Produto <small>Preencha os detalhes do produto</small>';
-    }
-
-    function editProduct(id) {
-        const p = products.find(x => x.id === id);
-        if (!p) return;
-        document.getElementById('edit-product-id').value = p.id;
-        document.getElementById('prod-name').value = p.name;
-        document.getElementById('prod-desc').value = p.description;
-        document.getElementById('prod-price').value = p.price;
-        document.getElementById('prod-category').value = p.category;
-        document.getElementById('form-product-title').innerHTML =
-            'Editar Produto <small>Atualize os detalhes</small>';
-        if (p.image) {
-            document.getElementById('prod-image-preview').src = p.image;
-            document.getElementById('prod-image-preview').style.display = 'block';
-            document.getElementById('upload-placeholder').style.display = 'none';
-        }
-        showPage('add-product');
-    }
-
-    function viewProduct(id) {
-        const p = products.find(x => x.id === id);
-        if (!p) return;
-        previousPage = currentPage;
-        currentPage = 'product-detail';
-
-        const fb = feedbacks[p.id] || [];
-        const avg = getAvgRating(p.id);
-
-        const container = document.getElementById('product-detail-container');
-        container.innerHTML = `
-            <div class="detail-img">
-                ${p.image ? `<img src="${p.image}" alt="${p.name}">` : getCategoryIcon(p.category)}
-            </div>
-            <div class="detail-body">
-                <span class="detail-badge">${p.category}</span>
-                <div class="detail-name">${p.name}</div>
-                <div class="detail-price">R$ ${Number(p.price).toFixed(2)}</div>
-                ${avg ? `<div style="color:#f39c12; margin-bottom:10px;">⭐ ${avg.toFixed(1)} (${fb.length} avaliação${fb.length !== 1 ? 'ões' : ''})</div>` : ''}
-                <div class="detail-desc">${p.description}</div>
-
-                <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                    <button class="btn btn-primary" onclick="addToKit(${p.id})">🎁 Adicionar ao Kit</button>
-                    <button class="btn btn-secondary" onclick="editProduct(${p.id})">✏️ Editar</button>
-                </div>
-
-                <div class="feedback-section">
-                    <h3>Avaliações & Feedback</h3>
-                    <div style="margin-bottom:15px;">
-                        <div style="font-size:0.85rem; color:#555; margin-bottom:8px;">Sua avaliação:</div>
-                        <div class="star-rating" id="star-rating-${p.id}">
-                            ${[1,2,3,4,5].map(i =>
-                                `<span class="star" onclick="setRating(${p.id}, ${i})" onmouseover="hoverRating(${p.id}, ${i})" onmouseout="resetHover(${p.id})">★</span>`
-                            ).join('')}
-                        </div>
-                        <textarea class="form-control" id="feedback-text-${p.id}" placeholder="Escreva seu comentário..." style="margin-top:8px;"></textarea>
-                        <input type="text" class="form-control" id="feedback-user-${p.id}" placeholder="Seu nome" style="margin-top:8px;">
-                        <button class="btn btn-primary btn-sm" onclick="submitFeedback(${p.id})" style="margin-top:10px;">Enviar Avaliação</button>
-                    </div>
-                    <div class="feedback-list" id="feedback-list-${p.id}">
-                        ${renderFeedbackList(p.id)}
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.querySelectorAll('.page').forEach(pg => pg.classList.remove('active'));
-        document.getElementById('page-product-detail').classList.add('active');
-        selectedRating = 0;
-    }
-
-    function renderFeedbackList(productId) {
-        const fb = feedbacks[productId] || [];
-        if (fb.length === 0)
-            return '<div style="color:#888; font-size:0.85rem; text-align:center; padding:15px;">Nenhuma avaliação ainda. Seja o primeiro!</div>';
-        return [...fb].reverse().map(f => `
-            <div class="feedback-item">
-                <div class="feedback-header">
-                    <span class="feedback-user">👤 ${f.user || 'Anônimo'}</span>
-                    <span class="feedback-stars">${'⭐'.repeat(f.rating)}</span>
-                </div>
-                <div class="feedback-text">${f.text || ''}</div>
-            </div>
-        `).join('');
-    }
-
-    function setRating(productId, rating) {
-        selectedRating = rating;
-        updateStars(productId, rating);
-    }
-
-    function hoverRating(productId, rating) {
-        updateStars(productId, rating);
-    }
-
-    function resetHover(productId) {
-        updateStars(productId, selectedRating);
-    }
-
-    function updateStars(productId, rating) {
-        const stars = document.querySelectorAll(`#star-rating-${productId} .star`);
-        stars.forEach((star, i) => {
-            star.classList.toggle('active', i < rating);
-        });
-    }
-
-    function submitFeedback(productId) {
-        if (!selectedRating) { showToast('Selecione uma nota!', 'error'); return; }
-        const text = document.getElementById(`feedback-text-${productId}`).value.trim();
-        const user = document.getElementById(`feedback-user-${productId}`).value.trim();
-        if (!feedbacks[productId]) feedbacks[productId] = [];
-        feedbacks[productId].push({
-            rating: selectedRating,
-            text,
-            user: user || 'Anônimo',
-            date: new Date().toLocaleDateString('pt-BR')
-        });
-        saveData();
-        document.getElementById(`feedback-list-${productId}`).innerHTML = renderFeedbackList(productId);
-        document.getElementById(`feedback-text-${productId}`).value = '';
-        document.getElementById(`feedback-user-${productId}`).value = '';
-        selectedRating = 0;
-        updateStars(productId, 0);
-        showToast('Avaliação enviada! Obrigada! 🌸', 'success');
-    }
-
-    function addToKit(productId) {
-        document.getElementById('edit-kit-id').value = '';
-        showPage('add-kit');
-        setTimeout(() => {
-            const checkbox = document.querySelector(`#kit-products-list input[value="${productId}"]`);
-            if (checkbox) { checkbox.checked = true; updateKitTotal(); }
-        }, 100);
-    }
-
-    function renderKits() {
-        filterKits();
-    }
-
-    function filterKits() {
-        const search = document.getElementById('search-kits').value.toLowerCase();
-        const grid = document.getElementById('kits-grid');
-        const filtered = kits.filter(k =>
-            k.name.toLowerCase().includes(search) ||
-            (k.description || '').toLowerCase().includes(search)
-        );
-
-        document.getElementById('kits-count-label').textContent =
-            `${filtered.length} kit${filtered.length !== 1 ? 's' : ''} criado${filtered.length !== 1 ? 's' : ''}`;
-        grid.innerHTML = '';
-
-        if (filtered.length === 0) {
-            grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><span class="empty-icon">🎁</span><h3>Nenhum kit ainda</h3><p>Crie seu primeiro kit de produtos!</p></div>';
-        } else {
-            [...filtered].reverse().forEach(kit => {
-                const div = document.createElement('div');
-                div.className = 'kit-card';
-                div.innerHTML = `
-                    <div class="kit-header">
-                        <div class="kit-name">🎁 ${kit.name}</div>
-                        <div class="kit-desc">${kit.description || 'Kit especial de skincare'}</div>
-                    </div>
-                    <div class="kit-body">
-                        <div class="kit-price">R$ ${Number(kit.totalPrice).toFixed(2)}</div>
-                        <div class="kit-products-count">📦 ${kit.products.length} produto${kit.products.length !== 1 ? 's' : ''} incluído${kit.products.length !== 1 ? 's' : ''}</div>
-                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                            <button class="btn btn-primary btn-sm" onclick="viewKit(${kit.id})">Ver Detalhes</button>
-                            <button class="btn btn-secondary btn-sm" onclick="editKit(${kit.id})">✏️ Editar</button>
-                            <button class="btn btn-danger btn-sm" onclick="confirmDelete('kit', ${kit.id})">🗑️</button>
-                        </div>
-                    </div>
-                `;
-                grid.appendChild(div);
-            });
-        }
-    }
-
-    function setupAddKit() {
-        const list = document.getElementById('kit-products-list');
-        list.innerHTML = '';
-        const editId = document.getElementById('edit-kit-id').value;
-        const editKit = editId ? kits.find(k => k.id == editId) : null;
-
-        if (products.length === 0) {
-            list.innerHTML = '<div style="padding:20px; text-align:center; color:#888;">Nenhum produto cadastrado ainda.<br><button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="showPage(\'add-product\')">+ Adicionar Produto</button></div>';
-            return;
-        }
-
-        products.forEach(p => {
-            const isChecked = editKit && editKit.products.includes(p.id);
-            const item = document.createElement('label');
-            item.className = 'checkbox-item';
-            item.innerHTML = `
-                <input type="checkbox" value="${p.id}" ${isChecked ? 'checked' : ''} onchange="updateKitTotal()">
-                <div class="item-info">
-                    <div class="item-name">${p.name}</div>
-                    <div class="item-price">R$ ${Number(p.price).toFixed(2)} · ${p.category}</div>
-                </div>
-            `;
-            list.appendChild(item);
-        });
-        updateKitTotal();
-    }
-
-    function updateKitTotal() {
-        const checkboxes = document.querySelectorAll('#kit-products-list input[type="checkbox"]:checked');
-        let total = 0;
-        checkboxes.forEach(cb => {
-            const p = products.find(x => x.id == cb.value);
-            if (p) total += Number(p.price);
-        });
-
-        const discount = parseFloat(document.getElementById('kit-discount').value) || 0;
-        const discounted = total * (1 - discount / 100);
-
-        document.getElementById('kit-total-price').textContent = `R$ ${discounted.toFixed(2)}`;
-        if (discount > 0 && total > 0) {
-            document.getElementById('kit-original-price').textContent =
-                `De R$ ${total.toFixed(2)} com ${discount}% de desconto`;
-        } else {
-            document.getElementById('kit-original-price').textContent = '';
-        }
-    }
-
-    function saveKit() {
-        const name = document.getElementById('kit-name').value.trim();
-        const desc = document.getElementById('kit-desc').value.trim();
-        const discount = parseFloat(document.getElementById('kit-discount').value) || 0;
-        const editId = document.getElementById('edit-kit-id').value;
-
-        const checked = document.querySelectorAll('#kit-products-list input[type="checkbox"]:checked');
-        const selectedProducts = Array.from(checked).map(cb => parseInt(cb.value));
-
-        if (!name) { showToast('Informe o nome do kit!', 'error'); return; }
-        if (selectedProducts.length === 0) { showToast('Selecione pelo menos um produto!', 'error'); return; }
-
-        let total = 0;
-        selectedProducts.forEach(id => {
-            const p = products.find(x => x.id === id);
-            if (p) total += Number(p.price);
-        });
-        const finalPrice = total * (1 - discount / 100);
-
-        if (editId) {
-            const idx = kits.findIndex(k => k.id == editId);
-            if (idx !== -1) {
-                kits[idx] = { ...kits[idx], name, description: desc, products: selectedProducts, totalPrice: finalPrice, discount };
-                showToast('Kit atualizado! 🎁', 'success');
-            }
-        } else {
-            kits.push({ id: Date.now(), name, description: desc, products: selectedProducts, totalPrice: finalPrice, discount });
-            showToast('Kit criado com sucesso! 🎁', 'success');
-        }
-
-        saveData();
-        clearKitForm();
-        showPage('kits');
-    }
-
-    function clearKitForm() {
-        document.getElementById('edit-kit-id').value = '';
-        document.getElementById('kit-name').value = '';
-        document.getElementById('kit-desc').value = '';
-        document.getElementById('kit-discount').value = '';
-        document.getElementById('kit-total-price').textContent = 'R$ 0,00';
-        document.getElementById('kit-original-price').textContent = '';
-        document.getElementById('form-kit-title').innerHTML =
-            'Criar Kit <small>Monte seu kit de produtos</small>';
-        document.querySelectorAll('#kit-products-list input[type="checkbox"]').forEach(cb => cb.checked = false);
-    }
-
-    function editKit(id) {
-        const k = kits.find(x => x.id === id);
-        if (!k) return;
-        document.getElementById('edit-kit-id').value = k.id;
-        document.getElementById('kit-name').value = k.name;
-        document.getElementById('kit-desc').value = k.description || '';
-        document.getElementById('kit-discount').value = k.discount || '';
-        document.getElementById('form-kit-title').innerHTML =
-            'Editar Kit <small>Atualize seu kit</small>';
-        showPage('add-kit');
-    }
-
-    function viewKit(id) {
-        const kit = kits.find(x => x.id === id);
-        if (!kit) return;
-
-        const container = document.getElementById('kit-detail-container');
-
-        let totalOriginal = 0;
-        const productsHtml = kit.products.map(pid => {
-            const p = products.find(x => x.id === pid);
-            if (!p) return '';
-            totalOriginal += Number(p.price);
-            return `
-                <div class="detail-product-item">
-                    <div class="prod-icon">
-                        ${p.image ? `<img src="${p.image}" alt="${p.name}">` : getCategoryIcon(p.category)}
-                    </div>
-                    <div class="prod-info">
-                        <div class="prod-name">${p.name}</div>
-                        <div class="prod-price">R$ ${Number(p.price).toFixed(2)} · ${p.category}</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        const desconto = kit.discount || 0;
-
-        container.innerHTML = `
-            <div class="detail-body">
-                <span class="detail-badge">Kit de Skincare</span>
-                <div class="detail-name">🎁 ${kit.name}</div>
-                <div class="detail-price">R$ ${Number(kit.totalPrice).toFixed(2)}</div>
-                ${desconto ? `<div style="font-size:0.85rem; color:#888; margin-top:-8px; margin-bottom:10px;">De R$ ${totalOriginal.toFixed(2)} com ${desconto}% de desconto</div>` : ''}
-                <div class="detail-desc">${kit.description || 'Kit especial montado com produtos selecionados.'}</div>
-
-                <div class="detail-products-list">
-                    <h3 style="font-size:1rem; margin-bottom:10px; color:var(--dark);">Produtos incluídos</h3>
-                    ${productsHtml || '<div style="color:#888; font-size:0.85rem;">Nenhum produto encontrado neste kit.</div>'}
-                </div>
-
-                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:20px;">
-                    <button class="btn btn-secondary" onclick="editKit(${kit.id})">✏️ Editar Kit</button>
-                    <button class="btn btn-danger" onclick="confirmDelete('kit', ${kit.id})">🗑️ Excluir Kit</button>
-                </div>
-            </div>
-        `;
-
-        document.querySelectorAll('.page').forEach(pg => pg.classList.remove('active'));
-        document.getElementById('page-kit-detail').classList.add('active');
-    }
-
-    function confirmDelete(type, id) {
-        const modal = document.getElementById('confirm-modal');
-        const title = document.getElementById('modal-title');
-        const message = document.getElementById('modal-message');
-        const btn = document.getElementById('modal-confirm-btn');
-
-        if (type === 'product') {
-            title.textContent = 'Remover produto';
-            message.textContent = 'Tem certeza que deseja remover este produto? Ele será retirado também dos kits em que estiver.';
-        } else {
-            title.textContent = 'Remover kit';
-            message.textContent = 'Tem certeza que deseja remover este kit? Esta ação não pode ser desfeita.';
-        }
-
-        modalCallback = () => {
-            if (type === 'product') {
-                deleteProduct(id);
-            } else {
-                deleteKit(id);
-            }
-        };
-
-        btn.onclick = () => {
-            if (modalCallback) modalCallback();
-            closeModal();
-        };
-
-        modal.classList.add('active');
-    }
-
-    function closeModal() {
-        document.getElementById('confirm-modal').classList.remove('active');
-        modalCallback = null;
-    }
-
-    function deleteProduct(id) {
-        products = products.filter(p => p.id !== id);
-
-        kits = kits.map(k => ({
-            ...k,
-            products: k.products.filter(pid => pid !== id)
-        })).filter(k => k.products.length > 0);
-
-        delete feedbacks[id];
-
-        saveData();
-        showToast('Produto removido com sucesso.', 'success');
-        showPage('products');
-    }
-
-    function deleteKit(id) {
-        kits = kits.filter(k => k.id !== id);
-        saveData();
-        showToast('Kit removido com sucesso.', 'success');
-        showPage('kits');
-    }
-
-    let toastTimeout = null;
-    function showToast(message, type = 'success') {
-        const toast = document.getElementById('toast');
-        toast.textContent = message;
-        toast.className = 'toast ' + type + ' show';
-
-        if (toastTimeout) clearTimeout(toastTimeout);
-        toastTimeout = setTimeout(() => {
-            toast.classList.remove('show');
-        }, 2800);
-    }
-
-   <script>
     // ====== CONTROLE DE LOGIN ======
     const ADMIN_PASSWORD = "Make270166@";
     let isLoggedIn = false;
 
     function updateProtectedUI() {
-        // Botões da barra de navegação
-        const addProductBtn = document.querySelector('nav button[onclick="showPage(\'add-product\')"]');
-        const addKitBtn = document.querySelector('nav button[onclick="showPage(\'add-kit\')"]');
+        const navButtons = document.querySelectorAll('nav button');
+        const addProductBtn = navButtons[2];
+        const addKitBtn = navButtons[4];
 
         if (addProductBtn) addProductBtn.style.display = isLoggedIn ? '' : 'none';
         if (addKitBtn) addKitBtn.style.display = isLoggedIn ? '' : 'none';
 
-        // Botões de ação de produto (editar, excluir)
         document.querySelectorAll('.btn-edit-product, .btn-delete-product').forEach(btn => {
             btn.style.display = isLoggedIn ? 'inline-flex' : 'none';
         });
 
-        // Botões de ação de kit (editar, excluir)
         document.querySelectorAll('.btn-edit-kit, .btn-delete-kit').forEach(btn => {
             btn.style.display = isLoggedIn ? 'inline-flex' : 'none';
         });
 
-        // Botão "Adicionar ao Kit" no detalhe do produto
         document.querySelectorAll('.btn-add-to-kit').forEach(btn => {
             btn.style.display = isLoggedIn ? 'inline-flex' : 'none';
         });
@@ -1722,7 +1069,6 @@
         }
     }
 
-    // ====== DADOS ======
     let products = JSON.parse(localStorage.getItem('lcmake_products') || '[]');
     let kits = JSON.parse(localStorage.getItem('lcmake_kits') || '[]');
     let feedbacks = JSON.parse(localStorage.getItem('lcmake_feedbacks') || '{}');
@@ -1748,7 +1094,6 @@
         localStorage.setItem('lcmake_feedbacks', JSON.stringify(feedbacks));
     }
 
-    // ====== NAVEGAÇÃO ======
     function showPage(page) {
         if (currentPage !== page) previousPage = currentPage;
         currentPage = page;
@@ -1788,7 +1133,6 @@
         showPage(previousPage === 'product-detail' ? 'products' : previousPage);
     }
 
-    // ====== HOME ======
     function renderHome() {
         const allFeedbacks = Object.values(feedbacks).flat();
         document.getElementById('stat-products').textContent = products.length;
@@ -1825,7 +1169,6 @@
         }
     }
 
-    // ====== PRODUTOS ======
     function renderProducts() {
         const select = document.getElementById('filter-category');
         select.innerHTML = '<option value="">Todas categorias</option>';
@@ -1910,7 +1253,6 @@
         return fb.reduce((sum, f) => sum + f.rating, 0) / fb.length;
     }
 
-    // ====== ADD/EDIT PRODUTO ======
     function setupAddProduct() {
         if (!document.getElementById('edit-product-id').value) {
             document.getElementById('form-product-title').innerHTML =
@@ -2009,7 +1351,6 @@
         showPage('add-product');
     }
 
-    // ====== DETALHE PRODUTO ======
     function viewProduct(id) {
         const p = products.find(x => x.id === id);
         if (!p) return;
@@ -2127,7 +1468,6 @@
         }, 100);
     }
 
-    // ====== KITS ======
     function renderKits() {
         filterKits();
     }
@@ -2332,7 +1672,6 @@
         setTimeout(updateProtectedUI, 0);
     }
 
-    // ====== EXCLUSÃO ======
     function confirmDelete(type, id) {
         const modal = document.getElementById('confirm-modal');
         const title = document.getElementById('modal-title');
@@ -2390,7 +1729,6 @@
         showPage('kits');
     }
 
-    // ====== TOAST ======
     let toastTimeout = null;
     function showToast(message, type = 'success') {
         const toast = document.getElementById('toast');
@@ -2403,7 +1741,8 @@
         }, 2800);
     }
 
-    // ====== INIT ======
     renderHome();
     updateProtectedUI();
 </script>
+</body>
+</html>
